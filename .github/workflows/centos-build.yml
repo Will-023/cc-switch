@@ -13,22 +13,35 @@ jobs:
       image: centos:7
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Fix CentOS 7 EOL Yum Repos
+      # Fix EOL repos and install git BEFORE checkout — must use shell steps only
+      # because CentOS 7 (glibc 2.17) cannot run the Node.js 20 binary that
+      # GitHub Actions uses internally to execute JS-based actions like
+      # actions/checkout@v4 or actions/upload-artifact@v4.
+      - name: Fix CentOS 7 EOL Yum Repos and install git
         run: |
           sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
           sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+          yum install -y git curl wget
+
+      - name: Checkout repository
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git init
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git fetch --depth=1 origin "${{ github.sha }}"
+          git checkout FETCH_HEAD
 
       - name: Install System Dependencies
         run: |
           yum update -y
           yum groupinstall -y "Development Tools"
+          # Install devtoolset-9 for a modern GCC (9.x) — CentOS 7's default
+          # GCC 4.8.5 lacks full C++14/C++17 support required by Tauri/Rust crates.
+          yum install -y centos-release-scl
+          yum install -y devtoolset-9
           yum install -y epel-release
           yum install -y \
-            wget \
-            curl \
             openssl-devel \
             webkit2gtk3-devel \
             gtk3-devel \
@@ -50,24 +63,24 @@ jobs:
           wget https://unofficial-builds.nodejs.org/download/release/v20.18.0/node-v20.18.0-linux-x64-glibc-217.tar.gz
           tar -xzf node-v20.18.0-linux-x64-glibc-217.tar.gz -C /usr/local --strip-components=1
           echo "/usr/local/bin" >> $GITHUB_PATH
-          node -v
-          npm -v
+          /usr/local/bin/node -v
+          /usr/local/bin/npm -v
 
       - name: Install pnpm
         run: |
-          npm install -g pnpm@10.12.3
-          pnpm -v
+          /usr/local/bin/npm install -g pnpm@10.12.3
+          /usr/local/bin/pnpm -v
 
       - name: Install Frontend Dependencies
-        run: pnpm install --frozen-lockfile
+        run: /usr/local/bin/pnpm install --frozen-lockfile
 
       - name: Build Tauri App (AppImage & RPM)
-        run: pnpm tauri build --bundles appimage,rpm
+        run: |
+          # Activate devtoolset-9 to export CC/CXX/PATH with GCC 9 for this step.
+          . /opt/rh/devtoolset-9/enable
+          /usr/local/bin/pnpm tauri build --bundles appimage,rpm
 
-      - name: Upload Linux Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: centos7-release-assets
-          path: |
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/rpm/*.rpm
+      - name: List Build Artifacts
+        run: |
+          echo "=== CentOS 7 Build Artifacts ==="
+          find src-tauri/target/release/bundle \( -name "*.AppImage" -o -name "*.rpm" \) 2>/dev/null || echo "No artifacts found"
