@@ -39,6 +39,9 @@ jobs:
           # Install devtoolset-9 for a modern GCC (9.x) — CentOS 7's default
           # GCC 4.8.5 lacks full C++14/C++17 support required by Tauri/Rust crates.
           yum install -y centos-release-scl
+          # Fix the newly created SCLo repo files which still point to the dead mirrorlist
+          sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-SCLo-*.repo
+          sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-SCLo-*.repo
           yum install -y devtoolset-9
           yum install -y epel-release
           yum install -y \
