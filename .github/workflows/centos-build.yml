@@ -49,6 +49,7 @@ jobs:
         run: |
           wget https://unofficial-builds.nodejs.org/download/release/v20.18.0/node-v20.18.0-linux-x64-glibc-217.tar.gz
           tar -xzf node-v20.18.0-linux-x64-glibc-217.tar.gz -C /usr/local --strip-components=1
+          echo "/usr/local/bin" >> $GITHUB_PATH
           node -v
           npm -v
 
