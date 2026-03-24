@@ -1,0 +1,72 @@
+name: CentOS 7 Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-centos7:
+    runs-on: ubuntu-latest
+    container:
+      image: centos:7
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fix CentOS 7 EOL Yum Repos
+        run: |
+          sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+          sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+
+      - name: Install System Dependencies
+        run: |
+          yum update -y
+          yum groupinstall -y "Development Tools"
+          yum install -y epel-release
+          yum install -y \
+            wget \
+            curl \
+            openssl-devel \
+            webkit2gtk3-devel \
+            gtk3-devel \
+            libsoup-devel \
+            pango-devel \
+            cairo-devel \
+            gdk-pixbuf2-devel \
+            atk-devel \
+            squashfs-tools \
+            rpm-build
+
+      - name: Install Rust Toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install Node.js 20 (glibc-2.17 compatible)
+        run: |
+          wget https://unofficial-builds.nodejs.org/download/release/v20.18.0/node-v20.18.0-linux-x64-glibc-217.tar.gz
+          tar -xzf node-v20.18.0-linux-x64-glibc-217.tar.gz -C /usr/local --strip-components=1
+          node -v
+          npm -v
+
+      - name: Install pnpm
+        run: |
+          npm install -g pnpm@10.12.3
+          pnpm -v
+
+      - name: Install Frontend Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri App (AppImage & RPM)
+        run: pnpm tauri build --bundles appimage,rpm
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: centos7-release-assets
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/rpm/*.rpm
